@@ -192,6 +192,30 @@
         display: none;
       }
 
+      .mode-group {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .mode-icon {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        text-transform: uppercase;
+        font-size: 10px;
+        opacity: 0.7;
+      }
+
+      .mode-icon svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+      }
+
     </style>
 </head>
 <body>
@@ -200,27 +224,59 @@
         <input type="file" id="imageInput" accept="image/*">
         <label for="imageInput" class="file-input-label">Choose image</label>
     </div>
-    <div id="modeToggle">
-        <button id="outInBtn" class="mode-btn active">Out → In</button>
-        <button id="inOutBtn" class="mode-btn">In → Out</button>
-        <button id="quadInBtn" class="mode-btn">Quad In</button>
-        <button id="quadOutBtn" class="mode-btn">Quad Out</button>
+    <div class="mode-group">
+        <div class="mode-icon">
+            <svg viewBox="0 0 24 24">
+                <path d="M12 2 L12 22 M8 6 L12 2 L16 6 M16 18 L12 22 L8 18"/>
+            </svg>
+            [M]
+        </div>
+        <div id="modeToggle">
+            <button id="outInBtn" class="mode-btn active">Out → In</button>
+            <button id="inOutBtn" class="mode-btn">In → Out</button>
+            <button id="quadInBtn" class="mode-btn">Quad In</button>
+            <button id="quadOutBtn" class="mode-btn">Quad Out</button>
+        </div>
     </div>
-    <div id="edgeToggle">
-        <button id="edgeClampBtn" class="mode-btn active">Clamp</button>
-        <button id="edgeWrapBtn" class="mode-btn">Wrap</button>
-        <button id="edgeMirrorBtn" class="mode-btn">Mirror</button>
+    <div class="mode-group">
+        <div class="mode-icon">
+            <svg viewBox="0 0 24 24">
+                <rect x="4" y="4" width="16" height="16"/>
+                <path d="M4 4 L2 2 M20 4 L22 2 M4 20 L2 22 M20 20 L22 22"/>
+            </svg>
+            [E]
+        </div>
+        <div id="edgeToggle">
+            <button id="edgeClampBtn" class="mode-btn active">Clamp</button>
+            <button id="edgeWrapBtn" class="mode-btn">Wrap</button>
+            <button id="edgeMirrorBtn" class="mode-btn">Mirror</button>
+        </div>
     </div>
     <div id="zoomControl">
         <label for="zoomSlider">Zoom: <span id="zoomValue">1.0</span>x</label>
         <input type="range" id="zoomSlider" min="0.1" max="5.0" step="0.1" value="1.0">
+    </div>
+    <div class="mode-group">
+        <div class="mode-icon">
+            <svg viewBox="0 0 24 24">
+                <path d="M12 3 L12 21 M3 12 L21 12"/>
+                <path d="M12 3 A9 9 0 0 1 21 12" stroke-dasharray="2,2"/>
+            </svg>
+            [S]
+        </div>
+        <div id="straightenToggle">
+            <button id="straightenOffBtn" class="mode-btn active">Off</button>
+            <button id="straightenHorizBtn" class="mode-btn">Horiz</button>
+            <button id="straightenVertBtn" class="mode-btn">Vert</button>
+            <button id="straightenAutoBtn" class="mode-btn">Auto</button>
+        </div>
     </div>
 </div>
 
 <div id="canvasContainer">
     <canvas id="glCanvas" width="800" height="600"></canvas>
     <canvas id="lineOverlay" width="800" height="600"></canvas>
-    <div id="instructionOverlay" class="hidden">Drag to draw mirror line</div>
+    <div id="instructionOverlay">Drop an image here</div>
 </div>
 
 <!-- Vertex Shader -->
@@ -247,6 +303,7 @@
     uniform int u_mirrorMode;
     uniform int u_edgeMode;
     uniform float u_zoom;
+    uniform float u_rotationAngle;
     uniform bool u_hasLine;
 
     varying vec2 v_texCoord;
@@ -273,6 +330,17 @@
         vec2 lineDir = lineVec / lineLength;
         vec2 lineNormal = vec2(-lineDir.y, lineDir.x);
         vec2 lineMidpoint = (u_lineStart + u_lineEnd) / 2.0;
+
+        // Apply rotation if straighten is enabled (rotation around line midpoint)
+        if (u_rotationAngle != 0.0) {
+            vec2 offset = currentPixel - lineMidpoint;
+            float cosAngle = cos(u_rotationAngle);
+            float sinAngle = sin(u_rotationAngle);
+            currentPixel = lineMidpoint + vec2(
+                cosAngle * offset.x - sinAngle * offset.y,
+                sinAngle * offset.x + cosAngle * offset.y
+            );
+        }
 
         // Apply zoom centered on the line midpoint
         vec2 offset = currentPixel - lineMidpoint;
@@ -365,6 +433,7 @@
     mirrorMode: 0,
     edgeMode: 0,
     zoom: 1.0,
+    straightenMode: 0, // 0=off, 1=horizontal, 2=vertical, 3=auto
 
     uniforms: {},
 
@@ -443,8 +512,10 @@
         appState.lineStart = null;
         appState.lineEnd = null;
 
-        // Show instruction overlay
-        document.getElementById('instructionOverlay').classList.remove('hidden');
+        // Show instruction overlay with draw line text
+        const overlay = document.getElementById('instructionOverlay');
+        overlay.textContent = 'Drag to draw mirror line';
+        overlay.classList.remove('hidden');
 
         render();
       };
@@ -584,6 +655,55 @@
       appState.zoom = parseFloat(e.target.value);
       document.getElementById('zoomValue').textContent = appState.zoom.toFixed(1);
       render();
+    });
+
+    // Straighten mode buttons
+    function setStraightenMode(mode, buttonId) {
+      appState.straightenMode = mode;
+      document.querySelectorAll('#straightenToggle .mode-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(buttonId).classList.add('active');
+      render();
+    }
+
+    document.getElementById('straightenOffBtn').addEventListener('click', function () {
+      setStraightenMode(0, 'straightenOffBtn');
+    });
+
+    document.getElementById('straightenHorizBtn').addEventListener('click', function () {
+      setStraightenMode(1, 'straightenHorizBtn');
+    });
+
+    document.getElementById('straightenVertBtn').addEventListener('click', function () {
+      setStraightenMode(2, 'straightenVertBtn');
+    });
+
+    document.getElementById('straightenAutoBtn').addEventListener('click', function () {
+      setStraightenMode(3, 'straightenAutoBtn');
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function (e) {
+      // Ignore if typing in input fields
+      if (e.target.tagName === 'INPUT') return;
+
+      const key = e.key.toLowerCase();
+
+      if (key === 'm') {
+        // Cycle through mirror modes
+        const nextMode = (appState.mirrorMode + 1) % 4;
+        const buttons = ['outInBtn', 'inOutBtn', 'quadInBtn', 'quadOutBtn'];
+        setMirrorMode(nextMode, buttons[nextMode]);
+      } else if (key === 'e') {
+        // Cycle through edge modes
+        const nextMode = (appState.edgeMode + 1) % 3;
+        const buttons = ['edgeClampBtn', 'edgeWrapBtn', 'edgeMirrorBtn'];
+        setEdgeMode(nextMode, buttons[nextMode]);
+      } else if (key === 's') {
+        // Cycle through straighten modes
+        const nextMode = (appState.straightenMode + 1) % 4;
+        const buttons = ['straightenOffBtn', 'straightenHorizBtn', 'straightenVertBtn', 'straightenAutoBtn'];
+        setStraightenMode(nextMode, buttons[nextMode]);
+      }
     });
 
     canvas.addEventListener('mousedown', function (e) {
@@ -746,6 +866,32 @@
     gl.uniform1i(appState.uniforms.edgeMode, appState.edgeMode);
     gl.uniform1f(appState.uniforms.zoom, appState.zoom);
 
+    // Calculate rotation angle based on straighten mode
+    let rotationAngle = 0.0;
+    if (appState.straightenMode > 0 && appState.lineStart && appState.lineEnd) {
+      const dx = appState.lineEnd.x - appState.lineStart.x;
+      const dy = appState.lineEnd.y - appState.lineStart.y;
+      const lineAngle = Math.atan2(dy, dx);
+
+      if (appState.straightenMode === 1) {
+        // Horizontal: rotate to make line horizontal
+        rotationAngle = -lineAngle;
+      } else if (appState.straightenMode === 2) {
+        // Vertical: rotate to make line vertical
+        rotationAngle = -lineAngle + Math.PI / 2;
+      } else if (appState.straightenMode === 3) {
+        // Auto: choose horizontal or vertical based on line orientation
+        if (Math.abs(dx) > Math.abs(dy)) {
+          // Line is more horizontal
+          rotationAngle = -lineAngle;
+        } else {
+          // Line is more vertical
+          rotationAngle = -lineAngle + Math.PI / 2;
+        }
+      }
+    }
+    gl.uniform1f(appState.uniforms.rotationAngle, rotationAngle);
+
     if (appState.lineStart && appState.lineEnd) {
       const startY = appState.canvasHeight - appState.lineStart.y;
       const endY = appState.canvasHeight - appState.lineEnd.y;
@@ -811,6 +957,7 @@
       mirrorMode: gl.getUniformLocation(appState.program, 'u_mirrorMode'),
       edgeMode: gl.getUniformLocation(appState.program, 'u_edgeMode'),
       zoom: gl.getUniformLocation(appState.program, 'u_zoom'),
+      rotationAngle: gl.getUniformLocation(appState.program, 'u_rotationAngle'),
       hasLine: gl.getUniformLocation(appState.program, 'u_hasLine')
     };
 
