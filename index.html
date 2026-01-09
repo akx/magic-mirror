@@ -112,21 +112,21 @@
         color: var(--black);
       }
 
-      #zoomControl {
+      #zoomControl, #segmentsControl {
         display: flex;
         flex-direction: row;
         gap: 5px;
         align-items: center;
       }
 
-      #zoomControl label {
+      #zoomControl label, #segmentsControl label {
         font-size: inherit;
         text-transform: uppercase;
         color: var(--neon);
         white-space: nowrap;
       }
 
-      #zoomSlider {
+      #zoomSlider, #segmentsSlider {
         width: 100px;
         height: 2px;
         background: var(--neon);
@@ -135,7 +135,7 @@
         appearance: none;
       }
 
-      #zoomSlider::-webkit-slider-thumb {
+      #zoomSlider::-webkit-slider-thumb, #segmentsSlider::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
         width: 12px;
@@ -145,7 +145,7 @@
         border: none;
       }
 
-      #zoomSlider::-moz-range-thumb {
+      #zoomSlider::-moz-range-thumb, #segmentsSlider::-moz-range-thumb {
         width: 12px;
         height: 12px;
         background: var(--neon);
@@ -236,7 +236,12 @@
             <button id="inOutBtn" class="mode-btn">In → Out</button>
             <button id="quadInBtn" class="mode-btn">Quad In</button>
             <button id="quadOutBtn" class="mode-btn">Quad Out</button>
+            <button id="kaleidoBtn" class="mode-btn">Kaleido</button>
         </div>
+    </div>
+    <div id="segmentsControl" style="display: none;">
+        <label for="segmentsSlider">Segments: <span id="segmentsValue">6</span></label>
+        <input type="range" id="segmentsSlider" min="2" max="16" step="1" value="6">
     </div>
     <div class="mode-group">
         <div class="mode-icon">
@@ -304,6 +309,7 @@
     uniform int u_edgeMode;
     uniform float u_zoom;
     uniform float u_rotationAngle;
+    uniform int u_kaleidoSegments;
     uniform bool u_hasLine;
 
     varying vec2 v_texCoord;
@@ -353,9 +359,34 @@
 
         // Mode 0: Out → In, Mode 1: In → Out (simple mirror)
         // Mode 2: Quad In, Mode 3: Quad Out
-        bool isQuadMode = (u_mirrorMode >= 2);
+        // Mode 4: Kaleidoscope
+        bool isKaleidoMode = (u_mirrorMode == 4);
+        bool isQuadMode = (u_mirrorMode >= 2 && u_mirrorMode <= 3);
 
-        if (!isQuadMode) {
+        if (isKaleidoMode) {
+            // Kaleidoscope mode: angular mirroring around center point
+            vec2 center = lineMidpoint;
+            vec2 fromCenter = currentPixel - center;
+            float radius = length(fromCenter);
+
+            // Calculate angle, using line angle as rotation offset
+            float angle = atan(fromCenter.y, fromCenter.x) - lineDir.x * atan(lineDir.y, lineDir.x);
+
+            // Mirror angle into first segment
+            float segmentAngle = 6.283185307 / float(u_kaleidoSegments); // 2*PI / segments
+            angle = mod(angle, segmentAngle * 2.0);
+
+            // Mirror within the segment
+            if (angle > segmentAngle) {
+                angle = segmentAngle * 2.0 - angle;
+            }
+
+            // Add back the rotation offset
+            angle += atan(lineDir.y, lineDir.x);
+
+            // Convert back to cartesian
+            workingPixel = center + vec2(cos(angle), sin(angle)) * radius;
+        } else if (!isQuadMode) {
             // Simple mirror modes (0 and 1)
             bool shouldMirror = false;
             if (u_mirrorMode == 0) {
@@ -430,10 +461,11 @@
     isDrawingLine: false,
     hasLine: false,
 
-    mirrorMode: 0,
+    mirrorMode: 0, // 0=out-in, 1=in-out, 2=quad-in, 3=quad-out, 4=kaleidoscope
     edgeMode: 0,
     zoom: 1.0,
     straightenMode: 0, // 0=off, 1=horizontal, 2=vertical, 3=auto
+    kaleidoSegments: 6,
 
     uniforms: {},
 
@@ -610,6 +642,15 @@
       document.querySelectorAll('#modeToggle .mode-btn').forEach(btn => btn.classList.remove('active'));
       // Add active class to clicked button
       document.getElementById(buttonId).classList.add('active');
+
+      // Show/hide segments control based on kaleidoscope mode
+      const segmentsControl = document.getElementById('segmentsControl');
+      if (mode === 4) {
+        segmentsControl.style.display = 'flex';
+      } else {
+        segmentsControl.style.display = 'none';
+      }
+
       render();
     }
 
@@ -638,6 +679,10 @@
       setMirrorMode(3, 'quadOutBtn');
     });
 
+    document.getElementById('kaleidoBtn').addEventListener('click', function () {
+      setMirrorMode(4, 'kaleidoBtn');
+    });
+
     document.getElementById('edgeClampBtn').addEventListener('click', function () {
       setEdgeMode(0, 'edgeClampBtn');
     });
@@ -654,6 +699,13 @@
     document.getElementById('zoomSlider').addEventListener('input', function (e) {
       appState.zoom = parseFloat(e.target.value);
       document.getElementById('zoomValue').textContent = appState.zoom.toFixed(1);
+      render();
+    });
+
+    // Segments slider
+    document.getElementById('segmentsSlider').addEventListener('input', function (e) {
+      appState.kaleidoSegments = parseInt(e.target.value);
+      document.getElementById('segmentsValue').textContent = appState.kaleidoSegments;
       render();
     });
 
@@ -690,8 +742,8 @@
 
       if (key === 'm') {
         // Cycle through mirror modes
-        const nextMode = (appState.mirrorMode + 1) % 4;
-        const buttons = ['outInBtn', 'inOutBtn', 'quadInBtn', 'quadOutBtn'];
+        const nextMode = (appState.mirrorMode + 1) % 5;
+        const buttons = ['outInBtn', 'inOutBtn', 'quadInBtn', 'quadOutBtn', 'kaleidoBtn'];
         setMirrorMode(nextMode, buttons[nextMode]);
       } else if (key === 'e') {
         // Cycle through edge modes
@@ -865,6 +917,7 @@
     gl.uniform1i(appState.uniforms.mirrorMode, appState.mirrorMode);
     gl.uniform1i(appState.uniforms.edgeMode, appState.edgeMode);
     gl.uniform1f(appState.uniforms.zoom, appState.zoom);
+    gl.uniform1i(appState.uniforms.kaleidoSegments, appState.kaleidoSegments);
 
     // Calculate rotation angle based on straighten mode
     let rotationAngle = 0.0;
@@ -958,6 +1011,7 @@
       edgeMode: gl.getUniformLocation(appState.program, 'u_edgeMode'),
       zoom: gl.getUniformLocation(appState.program, 'u_zoom'),
       rotationAngle: gl.getUniformLocation(appState.program, 'u_rotationAngle'),
+      kaleidoSegments: gl.getUniformLocation(appState.program, 'u_kaleidoSegments'),
       hasLine: gl.getUniformLocation(appState.program, 'u_hasLine')
     };
 
