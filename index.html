@@ -20,12 +20,14 @@
         font-family: 'JetBrains Mono', Menlo, Consolas, monospace;
         font-size: 12px;
         background: var(--black);
-        min-height: 100vh;
+        height: 100vh;
+        height: 100dvh;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: flex-start;
         color: var(--neon);
+        overflow: hidden;
       }
 
       body.dragging {
@@ -46,6 +48,8 @@
         justify-content: center;
         flex-wrap: wrap;
         flex-shrink: 0;
+        max-height: 40vh;
+        overflow-y: auto;
       }
 
       .file-input-wrapper {
@@ -178,9 +182,11 @@
         border: 1px solid var(--neon);
         flex: 1;
         min-height: 0;
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
+        width: 100%;
       }
 
       #glCanvas {
@@ -250,6 +256,7 @@
         <input type="file" id="imageInput" accept="image/*">
         <label for="imageInput" class="file-input-label">Choose image</label>
     </div>
+    <button id="saveBtn" class="mode-btn" style="display: none;">Save</button>
     <div class="mode-group">
         <div class="mode-icon">
             <svg viewBox="0 0 24 24">
@@ -642,6 +649,8 @@
         appState.lineStart = null;
         appState.lineEnd = null;
 
+        document.getElementById('saveBtn').style.display = '';
+
         // Show instruction overlay with draw line text
         const overlay = document.getElementById('instructionOverlay');
         overlay.textContent = 'Drag to draw mirror line';
@@ -733,6 +742,16 @@
       if (e.target.files.length > 0) {
         loadImage(e.target.files[0]);
       }
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', function () {
+      if (!appState.image) return;
+      render();
+      const dataURL = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataURL;
+      a.download = 'mirror.png';
+      a.click();
     });
 
     // Mode button helper function
@@ -1214,7 +1233,8 @@
     const contextOptions = {
       antialias: true,
       alpha: false,
-      premultipliedAlpha: false
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: true
     };
 
     // Try WebGL2 first (supports NPOT mipmaps), fallback to WebGL1
